@@ -1,13 +1,238 @@
-HTTP Request
-     │
-     ▼
-PaymentController  ← HTTP Layer
-     │
-     ▼
-PaymentService     ← Business Logic Layer
-     │
-     ▼
-PaymentRepository  ← Data Access Layer（稍後建立）
-     │
-     ▼
-Database
+# Transaction Processing Platform
+
+A Java-based payment processing backend built with Spring Boot, designed to explore payment API development, transaction lifecycle management, idempotency, concurrency control, and distributed systems.
+
+This project is inspired by modern payment service providers and focuses on building reliable, scalable payment infrastructure through incremental development.
+
+## Project Objectives
+
+- Design RESTful APIs for payment processing.
+- Implement idempotent payment operations to prevent duplicate processing.
+- Explore concurrency control and race condition prevention.
+- Implement persistent transaction storage and payment lifecycle management.
+- Develop reliable payment processing workflows with failure recovery.
+- Apply distributed systems principles to financial transactions.
+- Introduce automated testing, CI/CD, and observability.
+
+## Tech Stack
+
+| Technology | Purpose |
+|---|---|
+| Java 17 | Backend development |
+| Spring Boot 3.5.7 | REST API framework |
+| Maven | Dependency management |
+| Jakarta Bean Validation | Request validation |
+| ConcurrentHashMap | In-memory idempotency |
+| PostgreSQL | Planned persistent storage |
+| Docker | Planned containerisation |
+| GitHub Actions | Planned CI/CD |
+
+## Architecture
+
+Current implementation:
+
+```text
+                  HTTP Client
+                       |
+                       v
+               PaymentController
+                       |
+                       v
+                PaymentService
+                       |
+                       v
+                PaymentRecord
+                       |
+                       v
+               ConcurrentHashMap
+                (In-memory Store)
+```
+
+The application currently uses an in-memory store for payment records and idempotency handling.
+
+Future iterations will introduce persistent database storage, transaction state management, and external payment gateway integration.
+
+## Implemented Features
+
+### 1. Payment Creation API
+
+**Endpoint:** `POST /payments`
+
+Example request:
+
+```http
+POST /payments
+Content-Type: application/json
+Idempotency-Key: order_1001_pay_1
+```
+
+```json
+{
+  "amount": 1000,
+  "currency": "AUD"
+}
+```
+
+Example response:
+
+```json
+{
+  "id": "pay_17472082-3f1c-47f3-87c9-b886369dabeb",
+  "amount": 1000,
+  "currency": "AUD",
+  "status": "PENDING"
+}
+```
+
+Amounts are represented in minor currency units. For example, `1000` represents AUD $10.00.
+
+The current API creates simulated payment records and does not process real financial transactions.
+
+### 2. Request Validation
+
+Implemented using Jakarta Bean Validation.
+
+- Payment amount must be positive.
+- Currency must not be blank.
+- Invalid requests return HTTP 400 Bad Request.
+
+### 3. Idempotency Handling
+
+Implemented using `ConcurrentHashMap.computeIfAbsent()`.
+
+The API supports:
+
+| Scenario | Behaviour |
+|---|---|
+| New idempotency key | Create a new payment |
+| Same key, same payload | Return existing payment |
+| Same key, different payload | Return HTTP 409 Conflict |
+
+This prevents duplicate payment record creation for the same idempotency key within a single running application instance.
+
+### 4. Concurrency Control
+
+Uses atomic `ConcurrentHashMap` operations to coordinate concurrent requests sharing the same idempotency key.
+
+**Current limitations:**
+
+- Payment records are lost when the application restarts.
+- Idempotency state is not shared across application instances.
+- No database-backed uniqueness constraints are implemented.
+- No external payment gateway integration exists.
+- Payment status is currently simulated.
+
+These limitations will be addressed in subsequent development stages.
+
+## API Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/payments/health` | Application health check |
+| POST | `/payments` | Create a simulated payment |
+
+## Getting Started
+
+### Prerequisites
+
+- Java 17
+- Maven
+
+### Run the Application
+
+Clone the repository:
+
+```bash
+git clone https://github.com/camillekokoko/transaction-processing-platform.git
+cd transaction-processing-platform
+```
+
+Start Spring Boot:
+
+```bash
+mvn spring-boot:run
+```
+
+The application runs on:
+
+`http://localhost:8080`
+
+### Test Payment Creation
+
+```bash
+curl -i -X POST http://localhost:8080/payments \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: order_1001_pay_1" \
+  -d '{"amount":1000,"currency":"AUD"}'
+```
+
+Retrying the same request with the same idempotency key returns the existing payment response.
+
+Changing the amount or currency while reusing the same key results in HTTP 409 Conflict.
+
+## Development Roadmap
+
+### Phase 1 — REST API Fundamentals
+- [x] Spring Boot application setup
+- [x] Payment request and response DTOs
+- [x] Request validation
+- [x] UUID-based payment identifiers
+- [x] In-memory idempotency
+- [x] Concurrent request handling
+- [x] Idempotency payload conflict detection
+
+### Phase 2 — Database Integration
+- [ ] PostgreSQL integration
+- [ ] Payment entity and repository
+- [ ] Database unique constraints
+- [ ] Transaction management
+- [ ] Persistent idempotency records
+
+### Phase 3 — Payment Lifecycle
+- [ ] Payment state machine
+- [ ] Payment authorisation and capture simulation
+- [ ] Refund processing
+- [ ] Payment status retrieval
+- [ ] Transaction history
+
+### Phase 4 — Distributed Systems
+- [ ] Event-driven payment processing
+- [ ] Message queues
+- [ ] Transactional outbox pattern
+- [ ] Retry and failure recovery
+- [ ] Event deduplication
+- [ ] Reconciliation workflows
+
+### Phase 5 — Production Engineering Practices
+- [ ] Unit and integration tests
+- [ ] Docker containerisation
+- [ ] CI/CD pipelines
+- [ ] Structured logging and observability
+- [ ] API security and authentication
+- [ ] Performance and concurrency testing
+
+## Engineering Focus
+
+This project explores several fundamental challenges in payment infrastructure:
+
+**Idempotency:** Ensuring repeated requests do not unintentionally trigger duplicate payment operations.
+
+**Concurrency:** Preventing race conditions when multiple requests attempt to process the same payment.
+
+**Consistency:** Maintaining reliable transaction records across system components.
+
+**Fault Tolerance:** Recovering safely from network timeouts, application crashes, and partial failures.
+
+**Distributed Systems:** Coordinating payment operations across multiple application instances and services.
+
+## Project Status
+
+**Active development — Phase 1 completed.**
+
+The current implementation is a learning and engineering portfolio project. It is not intended for production payment processing or real-money transactions.
+
+## Author
+
+Camille Ko
+
+Backend Engineering | Payment Systems | Distributed Systems
