@@ -1,0 +1,13 @@
+HTTP Request
+     │
+     ▼
+PaymentController  ← HTTP Layer
+     │
+     ▼
+PaymentService     ← Business Logic Layer
+     │
+     ▼
+PaymentRepository  ← Data Access Layer（稍後建立）
+     │
+     ▼
+Database
