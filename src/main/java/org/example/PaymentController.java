@@ -1,6 +1,7 @@
 package org.example;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,7 +27,7 @@ public class PaymentController {
     @ResponseStatus(HttpStatus.CREATED)
     public PaymentResponse payments(
             @Valid @RequestBody PaymentRequest request,
-            @RequestHeader("Idempotency-Key") String idempotencyKey
+            @RequestHeader("Idempotency-Key") @NotBlank String idempotencyKey
     ) {
         return paymentService.createPayment(request, idempotencyKey);    }
 

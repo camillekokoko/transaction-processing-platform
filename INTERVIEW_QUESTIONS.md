@@ -56,8 +56,21 @@ The questions remain open for future practice; the notes above capture concepts 
 - Controller tests use MockMvc with a mocked service to verify HTTP binding, validation, delegation, and response serialization. `verifyNoInteractions(service)` confirms rejected requests never invoked the mocked service.
 - A mocked service does not execute real idempotency logic. Controller tests can still pass if that logic is broken while the service method signature remains unchanged.
 - `sameKeyAndEquivalentPayloadReturnOriginalPayment()` calls the same real service instance twice with equivalent payloads and the same key. `assertEquals(original.id(), retry.id())` fails if the retry generates a new ID.
-- Current evidence: five service tests and seven controller test cases pass. These tests do not establish concurrent-request safety, cross-instance uniqueness, or restart persistence.
+- Current evidence: eight service tests and twenty controller test cases pass (28 total). Service tests include coordinated concurrent requests within one instance. These tests do not establish cross-instance uniqueness or restart persistence, and a passing concurrency test does not exhaust all possible thread schedules.
 
 ### Practice task
 
 Draw two clients calling one application process, then two clients calling separate application processes. Mark which requests share a map. Explain what each existing test suite proves and what remains untested.
+
+## Session 3: Concurrent Test Outcomes and Validation Boundaries
+
+### Interview questions and reference answers
+
+1. **Why should a concurrent conflicting-payload test avoid requiring a specific payload to win?**
+   Thread scheduling does not guarantee which request reaches the atomic operation first. Assert that exactly one request succeeds, the other receives a conflict, and the winning record remains unchanged, regardless of which payload wins.
+2. **Why verify that an invalid request never invokes the service, in addition to asserting HTTP 400?**
+   Invalid input should be rejected at the API boundary before business processing. A 400 response alone does not prove the service was never invoked or that payment creation was never attempted. `verifyNoInteractions(service)` checks this boundary in the controller test.
+3. **Why is a database unique constraint still needed after all 28 tests pass?**
+   The concurrent service tests share one service object and one map. Separate application processes have separate maps and can both accept the same key. A shared database unique constraint atomically rejects duplicate key insertion across those processes; the application must handle the conflict and retrieve the original result when appropriate.
+4. **Should a blank idempotency key return HTTP 400 or 409?**
+   Return 400 because the request is invalid. Use 409 when an existing key is reused with a conflicting payload. Requiring the header to be present does not by itself reject an empty or whitespace-only value.

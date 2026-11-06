@@ -95,6 +95,18 @@ class PaymentControllerTest {
         verifyNoInteractions(service);
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"", "   "})
+    void blankIdempotencyHeaderReturnsBadRequestWithoutCallingService(String key) throws Exception {
+        mockMvc.perform(post("/payments")
+                        .header("Idempotency-Key", key)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"amount\":1000,\"currency\":\"AUD\"}"))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(service);
+    }
+
     @Test
     void serviceConflictReturnsConflictStatus() throws Exception {
         PaymentRequest request = new PaymentRequest(2000, "AUD");
