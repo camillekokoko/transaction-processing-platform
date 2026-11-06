@@ -5,67 +5,145 @@
 ## Purpose
 Build an interview-ready backend system step by step, while explaining *why* real payment systems need idempotency, transactional correctness, reconciliation and operational observability. Use this project for hands-on learning, not to claim production experience.
 
-## Stack (confirm against source)
-- Java 17
-- Spring Boot 3.x (previously set up with 3.5.7; check `pom.xml`)
-- Maven
-- PostgreSQL 14
-- JUnit 5 / Spring Boot Test (verify test dependencies)
+## Stack
 
-## Current baseline — verify in the repository
-The learning baseline discussed so far includes:
-- `POST /payments` — payment creation exercise
-- `GET /health` — health endpoint exercise
-- `payments` table concept: `id`, unique `idempotency_key`, `amount`, `currency`, `status`
-- `PENDING` payment state
+| Technology | Verified repository status |
+|---|---|
+| Java 17 | Compiler source and target configured in `pom.xml` |
+| Spring Boot 3.5.7 | Parent version in `pom.xml` |
+| Maven | Build configuration present; no Maven wrapper script |
+| Spring Web / Jakarta Bean Validation | Used by the controller and request DTO |
+| Spring Data JPA / PostgreSQL JDBC | Dependencies and connection configuration present; payment service does not use them |
+| Spring Boot Test / JUnit Jupiter | Test dependency present; no test implementations |
 
-**These are context notes, not a verified inventory of the repo.** Ask Codex to inspect controllers, models, repositories, database migrations and tests; replace this section with what actually exists.
+Installed tool versions and PostgreSQL version have not been verified. PostgreSQL 14 is the intended learning environment.
 
-## Intended architecture (illustrative, not necessarily implemented)
+## Current implementation
+
+Verified by source inspection; build, application startup and HTTP behavior have not been verified in this audit.
+
+- `POST /payments`: validate input and create a simulated payment with a `pay_<UUID>` ID and `PENDING` status.
+- `GET /payments/health`: return the fixed text `Payment API is running`.
+- In-memory idempotency using `ConcurrentHashMap.computeIfAbsent()`.
+- Matching retries return the original response; conflicting key reuse returns HTTP `409`.
+
+No persistence entities, repositories or database migrations exist in the repository. The payment flow does not write to PostgreSQL. The existence or structure of local database tables has not been verified.
+
+## Current architecture
+
 ```text
-Client / API consumer
-        |
-        v
-REST Controller (DTO validation)
-        |
-        v
-Payment Service (business rules, idempotency, transaction boundary)
-        |
-        v
-Repository / PostgreSQL (unique constraints, persistence)
+HTTP client: JSON body + Idempotency-Key header
+                         |
+                         v
+                 PaymentController
+             deserialization + validation
+                         |
+                         v
+                   PaymentService
+             payment creation + idempotency
+                         |
+                         v
+       ConcurrentHashMap<String, PaymentRecord>
+           key -> original request + response
+                         |
+                         v
+                PaymentResponse -> JSON
 ```
 
-Future modules: simulated provider adapter, lifecycle events, transactional outbox, webhook consumer, reconciliation, monitoring and safe deployment. These are **planned**, not implemented.
+All application classes are in `src/main/java/org/example`:
 
-## Local setup (adapt commands to your repo)
-1. Install Java 17, Maven (or use the Maven wrapper), and PostgreSQL 14.
-2. Inspect `pom.xml` for dependencies and Java version.
-3. Review `src/main/resources/application.properties` or `.yml` for database configuration. **Never commit real credentials.** Prefer environment variables or local ignored configuration.
-4. Create a **local-only test database** according to the actual application configuration and migrations. Do not guess database names or credentials.
-5. Run the app:
+| Class | Responsibility |
+|---|---|
+| `Main` | Start Spring Boot and component scanning |
+| `PaymentController` | Map HTTP endpoints and delegate to the injected service |
+| `PaymentRequest` | Input record containing `amount` and `currency`, with validation constraints |
+| `PaymentService` | Generate IDs, store records and enforce idempotency rules |
+| `PaymentRecord` | Pair the original request with its response; not a JPA entity |
+| `PaymentResponse` | Output record containing `id`, `amount`, `currency` and `status` |
+
+## API
+
+Behavior below is derived from source and is not yet covered by automated tests.
+
+| Method | Path | Request | Success | Errors |
+|---|---|---|---|---|
+| GET | `/payments/health` | None | `200`, fixed text | No custom error handling |
+| POST | `/payments` | JSON body and required `Idempotency-Key` header | `201`, payment JSON, including matching retries | `400` for validation/binding errors or missing header; `409` for conflicting key reuse |
+
+### Create a payment
+
+Once the application is running locally:
+
+```bash
+curl -i http://localhost:8080/payments \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: lesson-001' \
+  -d '{"amount":1000,"currency":"AUD"}'
+```
+
+Example response body (ID varies):
+
+```json
+{
+  "id": "pay_17472082-3f1c-47f3-87c9-b886369dabeb",
+  "amount": 1000,
+  "currency": "AUD",
+  "status": "PENDING"
+}
+```
+
+The learning convention is integer minor units: `1000` represents AUD 10.00. The code requires a positive `long` amount and a nonblank currency; it does not validate supported currency codes or currency-specific precision.
+
+### Idempotency and retries
+
+| Key | Request fields | Behavior within the same running application instance |
+|---|---|---|
+| New | Valid | Create a payment; return `201` |
+| Existing | Same amount and currency | Return the original payment ID and response; return `201` |
+| Existing | Different amount or currency | Return `409`; leave the original record unchanged |
+| Different | Same amount and currency as an earlier request | Create a separate payment |
+
+The client supplies the idempotency key in an HTTP header. The server generates the payment ID. They serve different purposes.
+
+A client timeout does not prove payment creation failed. Retrying the same logical operation should reuse the original key and payload. Request comparison uses Java record equality, so currency comparison is case-sensitive.
+
+### Health check
+
+```bash
+curl -i http://localhost:8080/payments/health
+```
+
+This endpoint does not check database connectivity or downstream services.
+
+## Local setup and verification
+
+1. Install Java 17 and Maven. There is no `mvnw` script in the repository.
+2. Review `src/main/resources/application.properties`. It points to a local PostgreSQL database named `payment_db`. Adapt connection settings to your local learning environment; prefer environment variables or ignored local configuration for credentials.
+3. Ensure the configured local PostgreSQL database is accessible. JPA auto-configuration may require a working connection at startup even though payment storage is in memory. `spring.jpa.hibernate.ddl-auto=validate` does not create tables, and no migrations are provided.
+4. Start the application:
+
    ```bash
-   ./mvnw spring-boot:run  # only if mvnw exists
-   # otherwise: mvn spring-boot:run
+   mvn spring-boot:run
    ```
-6. Run tests:
+
+5. Build and invoke the test phase:
+
    ```bash
-   ./mvnw test  # only if mvnw exists
-   # otherwise: mvn test
-   ```
-7. Inspect actual controller mappings before making requests; example **only if endpoints exist**:
-   ```bash
-   curl -i http://localhost:8080/health
+   mvn clean test
    ```
 
-## API documentation
-Codex should inspect the real controllers and document each implemented endpoint using this format:
+No test implementations currently exist under `src/test`. A successful build alone is not evidence that payment behavior has been tested. These commands have not been run in this audit.
 
-| Method | Path | Request | Response | Errors | Verified? |
-|---|---|---|---|---|---|
-| POST | `/payments` | Inspect DTO | Inspect implementation | Inspect validation | Not yet verified |
-| GET | `/health` | None expected | Inspect implementation | Inspect | Not yet verified |
+## Current limitations and planned work
 
-Provide sanitized `curl` examples only after verifying endpoint paths, JSON schema and configuration.
+- Records and idempotency state disappear when the application stops or restarts.
+- Separate application instances do not share their maps. Atomic map operations protect creation only within one instance.
+- The map has no expiry or cleanup.
+- The idempotency header is required but has no explicit nonblank constraint.
+- Durable storage, database uniqueness constraints and payment transaction boundaries are not implemented.
+- Payments remain `PENDING`; authorization, capture, void, refund, settlement and status retrieval are not implemented.
+- Provider integration, transactional outbox, webhook processing, retries and reconciliation are planned.
+- Automated tests, authentication, containerization, CI and operational observability remain future work.
 
 ## Engineering goals
 - Atomic and safe idempotent payment creation under concurrency
@@ -77,6 +155,7 @@ Provide sanitized `curl` examples only after verifying endpoint paths, JSON sche
 ## How to learn with Codex
 - Read [`AGENTS.md`](AGENTS.md): coaching and change-control rules.
 - Follow [`LEARNING_ROADMAP.md`](LEARNING_ROADMAP.md): staged exercises.
+- Revisit [`INTERVIEW_QUESTIONS.md`](INTERVIEW_QUESTIONS.md): idempotency and safe retry practice.
 - In IntelliJ Codex chat, type: `NEXT. Inspect this repository first. Teach only the next small task. Do not change files.`
 - After coding yourself, type: `REVIEW my changes. Point out edge cases and tests. Don't edit.`
 - If stuck, type `HINT 1`; use `HINT 2/3` only when needed.
